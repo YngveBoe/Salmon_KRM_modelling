@@ -159,19 +159,19 @@ else:
     w_i = None
 
 # Ensure w and w_i are always positive
-w[w <= 0] = 1e-6
-w_i[w_i <= 0] = 1e-6
+w[w <= 0] = 1e-20
+w_i[w_i <= 0] = 1e-20
 assert np.all(w > 0)
 assert np.all(w_i > 0)
 #Check that zL < zU and zL_i < zU_i
 for i in range(len(zL)):
     if zL[i] >= zU[i]:
-        zL[i] = zU[i] - 1e-3
+        zL[i] = zU[i] - 1e-12
     assert zL[i] < zU[i]
 
 for i in range(len(zL_i)):
     if zL_i[i] >= zU_i[i]:
-        zL_i[i] = zU_i[i] - 1e-3
+        zL_i[i] = zU_i[i] - 1e-12
     assert zL_i[i] < zU_i[i]
 
 

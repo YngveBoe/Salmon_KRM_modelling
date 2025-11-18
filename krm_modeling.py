@@ -86,7 +86,7 @@ def plot_ts_with_linear_regression(df, plotlabel):
     mean_ts_data = 10*np.log10(mean_sigma_data)
     model = sm.OLS(mean_ts_data, sm.add_constant(log_l))
     results = model.fit()
-    print(results.summary())
+    #print(results.summary())
     ax.plot(labels, results.predict(sm.add_constant(log_l)), 'r-', label='Ungrouped')
     groups = df.groupby("length_group")['sigma']
     ts_data_grouped = []
@@ -130,7 +130,7 @@ def scale_krm_organism(org, scale: float=None, diameter_scale: float=None, targe
     out = copy.deepcopy(org)
 
     # helper to multiply arrays if present
-    def _mul_inplace(shape):
+    def _mul_inplace(shape, scale_x = True, scale_w = True, scale_zL = True, scale_zU = True):
         # Find Center line between z_U and z_L
         z_center_line = (shape.z_U + shape.z_L) / 2
         for name in ("x", "w", "z_U", "z_L"):
@@ -144,19 +144,21 @@ def scale_krm_organism(org, scale: float=None, diameter_scale: float=None, targe
                 arr = getattr(shape, name)
                 if arr is not None and shape.boundary.name != 'pressure_release':
                     setattr(shape, name, np.asarray(arr, float) * s * noise)
-                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'x':
+                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'x' and scale_x:
                     setattr(shape, name, np.asarray(arr, float) * s * noise)
-                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'w':
+                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'w' and scale_w:
                     if diameter_scale > 1:
                         do_nothing = []
                     setattr(shape, name, np.asarray(arr, float) * s * noise * diameter_scale) # * diameter_scale Need to fix this so it scales against the center line of the swimbladder
-                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'z_L':
+                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'z_L' and scale_zL:
+                    _diameter_scale = 1
                     zL = np.asarray(arr, float)
-                    new_zL = (zL + (zL - z_center_line) * diameter_scale) * s * noise
+                    new_zL = (zL + (zL - z_center_line) * _diameter_scale)  * noise
                     setattr(shape, name, new_zL)
-                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'z_U':
+                elif arr is not None and shape.boundary.name == 'pressure_release' and name == 'z_U' and scale_zU:
+                    _diameter_scale = 1
                     zU = np.asarray(arr, float)
-                    new_zU = (zU + (zU - z_center_line) * diameter_scale) * s * noise
+                    new_zU = (zU + (zU - z_center_line) * _diameter_scale) * noise
                     setattr(shape, name, new_zU)
 
 
@@ -170,7 +172,7 @@ def scale_krm_organism(org, scale: float=None, diameter_scale: float=None, targe
     # inclusions (e.g., swimbladder)
     if getattr(out, "inclusions", None):
         for inc in out.inclusions:
-            _mul_inplace(inc)
+            _mul_inplace(inc, scale_x = True, scale_w = True, scale_zL = False, scale_zU = False)
 
     # length metadata
     if hasattr(out, "length") and out.length is not None:
@@ -204,23 +206,28 @@ ref_length = fish.length
 scales = lengths/ref_length
 dfs = []
 
-fig,axs = plt.subplots(1,2)
+fig,axs = plt.subplots(2,1)
 ax1, ax2 = axs.flatten()
 def plot_fish(fish, ax1, ax2m, label, color):
     ax1.axis('equal')
     ax2.axis('equal')
-    ax1.plot(fish.body.x, fish.body.z_U, color, label=label)
-    ax1.plot(fish.body.x, fish.body.z_L, color, label='__nolabel__')
-    ax1.plot(fish.inclusions[0].x, fish.inclusions[0].z_U, color)
-    ax1.plot(fish.inclusions[0].x, fish.inclusions[0].z_L, color)
+    line_body_z_U = ax1.plot(fish.body.x, fish.body.z_U, color, label=label)
+    line_body_z_L = ax1.plot(fish.body.x, fish.body.z_L, color, label='__nolabel__')
+    line_inclusion_z_U = ax1.plot(fish.inclusions[0].x, fish.inclusions[0].z_U, color)
+    line_inclusion_z_L = ax1.plot(fish.inclusions[0].x, fish.inclusions[0].z_L, color)
     ax1.legend()
-    ax2.plot(fish.body.x, fish.body.w, color, label=label)
-    ax2.plot(fish.body.x, -fish.body.w, color)
-    ax2.plot(fish.inclusions[0].x, fish.inclusions[0].w, color)
-    ax2.plot(fish.inclusions[0].x, -fish.inclusions[0].w, color)
+    line_body_w = ax2.plot(fish.body.x, fish.body.w, color, label=label)
+    line_body_w_neg = ax2.plot(fish.body.x, -fish.body.w, color)
+    line_inclusion_w = ax2.plot(fish.inclusions[0].x, fish.inclusions[0].w, color)
+    line_inclusion_w_neg = ax2.plot(fish.inclusions[0].x, -fish.inclusions[0].w, color)
     ax2.legend()
+    ax1.set_xlim([-0.4,0.40])
+    ax2.set_xlim([-0.4,0.4])
+    ax1.grid()
+    ax2.grid()
     plt.pause(0.01)
-    return None
+    return line_body_z_U, line_body_z_L, line_inclusion_z_U, line_inclusion_z_L, line_body_w, line_body_w_neg, line_inclusion_w, line_inclusion_w_neg
+    
 
 for length_group, length, scale in zip(length_groups, lengths, scales):
     print(f'Current length: {length}')
@@ -228,10 +235,31 @@ for length_group, length, scale in zip(length_groups, lengths, scales):
     diameter_scale = (length_group/length_groups.min())**2
     print(f'diameter_scale: {diameter_scale}')
     fish_scaled = scale_krm_organism(fish, scale=scale, diameter_scale=diameter_scale, noise_scale=0.1)
-    ax1.clear()
-    ax2.clear()
-    plot_fish(fish, ax1, ax2, label='Original fish', color='blue')
-    plot_fish(fish_scaled, ax1, ax2, label=f'Current scaled fish', color='red')
+    
+    if length == lengths.min():
+        orig_fish =plot_fish(fish, ax1, ax2, label='Original fish', color='blue')
+        current_fish = plot_fish(fish_scaled, ax1, ax2, label=f'Current scaled fish', color='red')
+    else:
+        current_fish[0][0].set_xdata(fish_scaled.body.x)
+        current_fish[0][0].set_ydata(fish_scaled.body.z_U)
+        current_fish[1][0].set_xdata(fish_scaled.body.x)
+        current_fish[1][0].set_ydata(fish_scaled.body.z_L)
+        current_fish[2][0].set_xdata(fish_scaled.inclusions[0].x)
+        current_fish[2][0].set_ydata(fish_scaled.inclusions[0].z_U)
+        current_fish[3][0].set_xdata(fish_scaled.inclusions[0].x)
+        current_fish[3][0].set_ydata(fish_scaled.inclusions[0].z_L)
+        current_fish[4][0].set_xdata(fish_scaled.body.x)
+        current_fish[4][0].set_ydata(fish_scaled.body.w)
+        current_fish[5][0].set_xdata(fish_scaled.body.x)
+        current_fish[5][0].set_ydata(-fish_scaled.body.w)
+        current_fish[6][0].set_xdata(fish_scaled.inclusions[0].x)
+        current_fish[6][0].set_ydata(fish_scaled.inclusions[0].w)
+        current_fish[7][0].set_xdata(fish_scaled.inclusions[0].x)
+        current_fish[7][0].set_ydata(-fish_scaled.inclusions[0].w)
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+
+        
     medium_c = 1490
     medium_rho = 1022
     theta = np.clip(np.random.normal(90,10,n_ts_per_size), 65, 115)
