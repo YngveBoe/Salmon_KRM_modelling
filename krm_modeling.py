@@ -62,7 +62,7 @@ def load_krmorganism_from_json(path: str) -> KRMorganism:
         vernacular_name=j.get("vernacular_name", "Atlantic salmon"),
     )
 
-def plot_ts_with_linear_regression(df, plotlabel):
+def plot_ts_with_linear_regression(df, ts_filter, plotlabel):
     cat_col   = "length"
     value_col = "ts"
 
@@ -82,12 +82,22 @@ def plot_ts_with_linear_regression(df, plotlabel):
 
     log_l = np.log10(labels)
     ts_data_numpy = np.stack(ts_data)
-    mean_sigma_data = np.mean(10**(ts_data_numpy/10),axis=1)
+    log_l = np.repeat(log_l, ts_data_numpy.shape[1]).reshape(ts_data_numpy.shape)
+    ts_filter_mask = ts_data_numpy>ts_filter
+    ts_data_numpy = ts_data_numpy[ts_filter_mask]
+    log_l = log_l[ts_filter_mask]
+    unique_log_l, inv, counts = np.unique(log_l, return_inverse=True, return_counts=True)
+
+    # Sum TS by group
+    sum_sigma_data = np.sum(np.bincount(inv, weights=10**(ts_data_numpy/10)))
+    mean_sigma_data = sum_sigma_data / counts
+    
     mean_ts_data = 10*np.log10(mean_sigma_data)
-    model = sm.OLS(mean_ts_data, sm.add_constant(log_l))
+
+    model = sm.OLS(mean_ts_data, sm.add_constant(unique_log_l))
     results = model.fit()
     #print(results.summary())
-    ax.plot(labels, results.predict(sm.add_constant(log_l)), 'r-', label='Ungrouped')
+    ax.plot(labels, results.predict(sm.add_constant(unique_log_l)), 'r-', label='Ungrouped')
     groups = df.groupby("length_group")['sigma']
     ts_data_grouped = []
     length_group = df['length_group'].values
@@ -180,7 +190,7 @@ def scale_krm_organism(org, scale: float=None, diameter_scale: float=None, targe
 
     return out
 
-fish_data = pd.read_excel(r'C:\\Users\\ynboe7456\\OneDrive - University of Bergen\\Yngve\Artikler\\Paper 1 - Log-length-paper\\data\\Fish Size Data.xlsx')
+fish_data = pd.read_excel(r'C:\\Users\\Yngve\\OneDrive - University of Bergen\\Yngve\Artikler\\Paper 1 - Log-length-paper\\data\\Fish Size Data.xlsx')
 lengths = fish_data['Length (mm)'].values/1000
 lengths, idx = np.unique(lengths, return_index=True)
 length_groups = fish_data['Length_group'].values/10
@@ -232,7 +242,7 @@ def plot_fish(fish, ax1, ax2m, label, color):
 for length_group, length, scale in zip(length_groups, lengths, scales):
     print(f'Current length: {length}')
     diameter_scale = np.random.normal(0.75, 0.15)
-    diameter_scale = (length_group/length_groups.min())**2
+    diameter_scale = (length/lengths.min())**1.5
     print(f'diameter_scale: {diameter_scale}')
     fish_scaled = scale_krm_organism(fish, scale=scale, diameter_scale=diameter_scale, noise_scale=0.1)
     
@@ -284,9 +294,9 @@ df_70 = df_complete[df_complete['f'] == 70000.]
 df_120 = df_complete[df_complete['f'] == 120000.]
 df_200 = df_complete[df_complete['f'] == 200000.]
 
-plot_ts_with_linear_regression(df_38, '38 kHz')
-plot_ts_with_linear_regression(df_70, '70 kHz')
-plot_ts_with_linear_regression(df_120, '120 kHz')
-plot_ts_with_linear_regression(df_200, '200 kHz')
+plot_ts_with_linear_regression(df_38, -60, '38 kHz')
+plot_ts_with_linear_regression(df_70, -60, '70 kHz')
+plot_ts_with_linear_regression(df_120, -60, '120 kHz')
+plot_ts_with_linear_regression(df_200, -60, '200 kHz')
 
 print('')
